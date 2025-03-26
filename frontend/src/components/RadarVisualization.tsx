@@ -29,6 +29,9 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
     const [currentTimeIndex, setCurrentTimeIndex] = useState(0);
     const [scale, setScale] = useState(1);
     const [error, setError] = useState<string | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const [offset, setOffset] = useState({ x: 0, y: 0 });
     const [gridBounds, setGridBounds] = useState<{
         minX: number;
         maxX: number;
@@ -36,6 +39,32 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
         maxY: number;
     } | null>(null);
     const [timeFrames, setTimeFrames] = useState<TimeFrame[]>([]);
+
+    // Обработчики событий мыши для drag and drop
+    const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        setIsDragging(true);
+        setDragStart({
+            x: e.clientX - offset.x,
+            y: e.clientY - offset.y,
+        });
+    };
+
+    const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (!isDragging) return;
+
+        setOffset({
+            x: e.clientX - dragStart.x,
+            y: e.clientY - dragStart.y,
+        });
+    };
+
+    const handleMouseUp = () => {
+        setIsDragging(false);
+    };
+
+    const handleMouseLeave = () => {
+        setIsDragging(false);
+    };
 
     // Преобразуем данные в удобный формат для анимации
     useEffect(() => {
@@ -282,6 +311,10 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             // Очищаем весь canvas
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
+            // Применяем трансформацию для перемещения
+            ctx.save();
+            ctx.translate(offset.x, offset.y);
+
             // Логируем размеры canvas
             console.log('Размеры canvas:', {
                 width: ctx.canvas.width,
@@ -394,6 +427,9 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
                 ctx.shadowOffsetX = 0;
                 ctx.shadowOffsetY = 0;
             });
+
+            // Восстанавливаем контекст
+            ctx.restore();
         } catch (err) {
             setError('Ошибка при отрисовке точек');
             console.error('Ошибка отрисовки:', err);
@@ -454,7 +490,14 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
 
     return (
         <div className='radar-visualization'>
-            <canvas ref={canvasRef} />
+            <canvas
+                ref={canvasRef}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseLeave}
+                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+            />
             <div className='time-controls'>
                 <input
                     type='range'
