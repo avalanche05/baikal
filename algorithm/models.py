@@ -161,4 +161,4 @@ class SensorConfig(BaseModel):
     type: str
     type_name: TypeName
     xM: Union[float, int]
-    yM: Union[float, int] 
+    yM: Union[float, int]

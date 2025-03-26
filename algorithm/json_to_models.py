@@ -3,10 +3,19 @@ from typing import List, Dict
 from datetime import datetime
 import glob
 import os
-from models import SensorConfig, Objects, RowData, RoadSensorLane, Zone, Trigger, Segment, DividingLineObj
+from algorithm.models import SensorConfig, Objects, RowData, RoadSensorLane, Zone, Trigger, Segment, DividingLineObj
+
 
 def parse_datetime(dt_str: str) -> datetime:
     return datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S.%f')
+
+
+length_types = {
+    1: 4.7,
+    3: 7.1,
+    4: 10.9,
+}
+
 
 def convert_json_to_models(json_data: dict) -> List[SensorConfig]:
     """
@@ -23,6 +32,8 @@ def convert_json_to_models(json_data: dict) -> List[SensorConfig]:
         for row in obj.get('rows_data', []):
             if 'time' in row:
                 row['time'] = parse_datetime(row['time'])
+            if row['obj_length'] == 0:
+                row['obj_length'] = length_types.get(row['obj_class'], 0)
     
     # Создаем модель SensorConfig
     sensor_config = SensorConfig(**json_data)
@@ -46,12 +57,10 @@ def process_json_file(file_path: str) -> List[SensorConfig]:
         print(f"Ошибка при обработке файла {file_path}: {str(e)}")
         return []
 
+
 def main():
-    # Путь к директории с JSON файлами
-    json_dir = "algorithm/data"
-    
     # Получаем список всех JSON файлов
-    json_files = ['/home/ilinivan/baikal/algorithm/data/Олимпийский20_03_2025_17_31.json']
+    json_files = ['/Users/plastinina-ls/studies/Hacks/baikal/data/Олимпийский20_03_2025_17_31.json']
     # json_files = glob.glob(os.path.join(json_dir, "*.json"))
     
     # if not json_files:
@@ -75,6 +84,9 @@ def main():
     print(f"Количество полос: {len(merged_model.road_sensor_lanes)}")
     print(f"Общее количество объектов: {len(merged_model.objects)}")
     print("-" * 50)
+
+    return merged_model
+
 
 if __name__ == "__main__":
     main() 
