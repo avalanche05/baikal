@@ -1,13 +1,12 @@
 export interface Boundary {
-    id: number;
     time: string;
     lanes: Lane[];
 }
 
 export interface Lane {
     laneId: number;
-    carStartId: number;
-    carEndId: number;
+    carStartId: number | null;
+    carEndId: number | null;
     queueLength: number;
     queueDuration: number;
     flowSpeed: number;

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Radar } from '../models/radar';
+import { Boundary } from '../models/boundaries';
 import './RadarVisualization.css';
 
 interface Point {
@@ -17,17 +18,17 @@ interface Point {
 interface TimeFrame {
     time: number;
     points: Point[];
+    boundary?: Boundary;
 }
 
 interface RadarVisualizationProps {
     radarData: Radar;
 }
 
-interface Lane {
-    lane_id: number;
-    lane_type: number;
-    lane_width: number;
-    lane_offset: number;
+interface RoadSensorLane {
+    lane_index: number;
+    range_offset: number;
+    width: number;
 }
 
 export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarData }) => {
@@ -46,6 +47,7 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
         maxY: number;
     } | null>(null);
     const [timeFrames, setTimeFrames] = useState<TimeFrame[]>([]);
+    const [boundaries, setBoundaries] = useState<Boundary[]>([]);
 
     // Обработчики событий мыши для drag and drop
     const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -92,6 +94,11 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
                 new Date(a.rows_data[0].time).getTime() - new Date(b.rows_data[0].time).getTime()
         );
 
+        // Сортируем границы по времени
+        const sortedBoundaries = [...boundaries].sort(
+            (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()
+        );
+
         for (let time = minTime; time <= maxTime; time += timeStep) {
             // Находим объект, который ближе всего к текущему времени
             let closestObject = sortedObjects[0];
@@ -105,6 +112,26 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
                     minTimeDiff = timeDiff;
                     closestObject = obj;
                 }
+            }
+
+            // Находим границы, которые ближе всего к текущему времени
+            let closestBoundary = sortedBoundaries[0];
+            let minBoundaryTimeDiff = Infinity;
+
+            for (const boundary of sortedBoundaries) {
+                const boundaryTime = new Date(boundary.time).getTime();
+                const timeDiff = boundaryTime - time; // Используем разницу без модуля
+
+                // Ищем границу, которая ближе всего к текущему времени, но не в будущем
+                if (timeDiff >= 0 && timeDiff < minBoundaryTimeDiff) {
+                    minBoundaryTimeDiff = timeDiff;
+                    closestBoundary = boundary;
+                }
+            }
+
+            // Если не нашли границу в будущем, берем последнюю из прошлого
+            if (!closestBoundary || minBoundaryTimeDiff === Infinity) {
+                closestBoundary = sortedBoundaries[sortedBoundaries.length - 1];
             }
 
             if (closestObject) {
@@ -123,6 +150,7 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
                 frames.push({
                     time,
                     points,
+                    boundary: closestBoundary,
                 });
 
                 // Логируем данные для каждого кадра
@@ -131,6 +159,23 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
                     objectTime: closestObject.rows_data[0].time,
                     timeDiff: minTimeDiff,
                     pointsCount: points.length,
+                    boundaryTime: closestBoundary
+                        ? new Date(closestBoundary.time).toISOString()
+                        : null,
+                    boundaryTimeDiff: minBoundaryTimeDiff,
+                    boundary: closestBoundary
+                        ? {
+                              lanes: closestBoundary.lanes.map((l) => ({
+                                  laneId: l.laneId,
+                                  carStartId: l.carStartId,
+                                  carEndId: l.carEndId,
+                                  queueLength: l.queueLength,
+                                  queueDuration: l.queueDuration,
+                                  flowSpeed: l.flowSpeed,
+                                  delay: l.delay,
+                              })),
+                          }
+                        : null,
                     points: points.map((p) => ({
                         id: p.obj_id,
                         x: p.x,
@@ -148,6 +193,18 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
                 max: new Date(maxTime).toISOString(),
             },
             timeStep,
+            boundariesCount: boundaries.length,
+            boundariesTimeRange:
+                boundaries.length > 0
+                    ? {
+                          min: new Date(
+                              Math.min(...boundaries.map((b) => new Date(b.time).getTime()))
+                          ).toISOString(),
+                          max: new Date(
+                              Math.max(...boundaries.map((b) => new Date(b.time).getTime()))
+                          ).toISOString(),
+                      }
+                    : null,
         });
 
         setTimeFrames(frames);
@@ -193,104 +250,28 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             maxY,
             pointsCount: allPoints.length,
         });
-    }, [radarData]);
+    }, [radarData, boundaries]);
 
-    // Функция для отрисовки координатной сетки
-    const drawGrid = (
-        ctx: CanvasRenderingContext2D,
-        minX: number,
-        maxX: number,
-        minY: number,
-        maxY: number,
-        finalScale: number
-    ) => {
-        try {
-            // Основная сетка
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 0.5;
-
-            // Рисуем вертикальные линии
-            const stepX = (maxX - minX) / 10;
-            for (let x = minX; x <= maxX; x += stepX) {
-                const screenX = (x - minX) * finalScale;
-                ctx.beginPath();
-                ctx.moveTo(screenX, 0);
-                ctx.lineTo(screenX, ctx.canvas.height);
-                ctx.stroke();
-
-                // Добавляем подписи по оси X
-                ctx.fillStyle = '#333';
-                ctx.font = '10px Arial';
-                ctx.fillText(x.toFixed(0), screenX - 15, ctx.canvas.height - 5);
+    // Загрузка данных о границах
+    useEffect(() => {
+        const loadBoundaries = async () => {
+            try {
+                const response = await fetch('/src/assets/boundaries.json');
+                const data = await response.json();
+                setBoundaries(data);
+            } catch (err) {
+                console.error('Ошибка загрузки границ:', err);
             }
-
-            // Рисуем горизонтальные линии
-            const stepY = (maxY - minY) / 10;
-            for (let y = minY; y <= maxY; y += stepY) {
-                const screenY = (y - minY) * finalScale;
-                ctx.beginPath();
-                ctx.moveTo(0, screenY);
-                ctx.lineTo(ctx.canvas.width, screenY);
-                ctx.stroke();
-
-                // Добавляем подписи по оси Y
-                ctx.fillStyle = '#333';
-                ctx.font = '10px Arial';
-                ctx.fillText(y.toFixed(0), 5, screenY + 5);
-            }
-
-            // Детальная сетка
-            ctx.strokeStyle = '#222';
-            ctx.lineWidth = 0.2;
-
-            // Рисуем детальные вертикальные линии
-            const detailStepX = stepX / 5;
-            for (let x = minX; x <= maxX; x += detailStepX) {
-                const screenX = (x - minX) * finalScale;
-                ctx.beginPath();
-                ctx.moveTo(screenX, 0);
-                ctx.lineTo(screenX, ctx.canvas.height);
-                ctx.stroke();
-            }
-
-            // Рисуем детальные горизонтальные линии
-            const detailStepY = stepY / 5;
-            for (let y = minY; y <= maxY; y += detailStepY) {
-                const screenY = (y - minY) * finalScale;
-                ctx.beginPath();
-                ctx.moveTo(0, screenY);
-                ctx.lineTo(ctx.canvas.width, screenY);
-                ctx.stroke();
-            }
-
-            // Рисуем оси координат
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 1;
-
-            // Ось X
-            const zeroY = (0 - minY) * finalScale;
-            ctx.beginPath();
-            ctx.moveTo(0, zeroY);
-            ctx.lineTo(ctx.canvas.width, zeroY);
-            ctx.stroke();
-
-            // Ось Y
-            const zeroX = (0 - minX) * finalScale;
-            ctx.beginPath();
-            ctx.moveTo(zeroX, 0);
-            ctx.lineTo(zeroX, ctx.canvas.height);
-            ctx.stroke();
-        } catch (err) {
-            console.error('Ошибка отрисовки сетки:', err);
-        }
-    };
+        };
+        loadBoundaries();
+    }, []);
 
     // Функция для отрисовки полос движения
     const drawLanes = (
         ctx: CanvasRenderingContext2D,
         minX: number,
-        maxX: number,
         minY: number,
+        maxX: number,
         maxY: number,
         finalScale: number
     ) => {
@@ -305,10 +286,6 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             const maxLaneOffset = Math.max(...lanes.map((lane) => Math.abs(lane.range_offset)));
             const maxLaneWidth = Math.max(...lanes.map((lane) => lane.width));
             const roadHeight = (maxLaneOffset * 2 + maxLaneWidth) * finalScale;
-
-            // Вычисляем видимую область с учетом смещения
-            const visibleMinX = minX - offset.x / finalScale;
-            const visibleMaxX = maxX - offset.x / finalScale;
 
             // Рисуем фон дороги на всю видимую ширину
             const roadY = (0 - minY) * finalScale - (roadHeight * finalScale) / 2;
@@ -472,6 +449,85 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
         }
     };
 
+    // Функция для отрисовки границ пробки
+    const drawQueueBoundaries = (
+        ctx: CanvasRenderingContext2D,
+        lane: RoadSensorLane,
+        currentFrame: TimeFrame,
+        minX: number,
+        minY: number,
+        finalScale: number
+    ) => {
+        if (!currentFrame.boundary) return;
+
+        const laneBoundary = currentFrame.boundary.lanes.find((b) => b.laneId === lane.lane_index);
+        if (!laneBoundary) return;
+
+        const laneY = lane.range_offset;
+        const screenY = (laneY - minY) * finalScale;
+        const laneHeight = 3.8 * finalScale;
+
+        // Рисуем линию очереди между началом и концом
+        if (laneBoundary.carStartId && laneBoundary.carEndId) {
+            const startCar = currentFrame.points.find((p) => p.obj_id === laneBoundary.carStartId);
+            const endCar = currentFrame.points.find((p) => p.obj_id === laneBoundary.carEndId);
+            if (startCar && endCar) {
+                // Рисуем фон затора
+                ctx.fillStyle = 'rgba(255, 165, 0, 0.1)';
+                ctx.fillRect(
+                    (startCar.x - minX) * finalScale,
+                    screenY - laneHeight / 2,
+                    (endCar.x - startCar.x) * finalScale,
+                    laneHeight
+                );
+
+                // Рисуем линию затора
+                ctx.beginPath();
+                ctx.moveTo((startCar.x - minX) * finalScale, screenY);
+                ctx.lineTo((endCar.x - minX) * finalScale, screenY);
+                ctx.strokeStyle = 'rgba(255, 165, 0, 0.8)';
+                ctx.lineWidth = laneHeight;
+                ctx.stroke();
+
+                // Добавляем пунктирную линию
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo((startCar.x - minX) * finalScale, screenY);
+                ctx.lineTo((endCar.x - minX) * finalScale, screenY);
+                ctx.strokeStyle = 'rgba(255, 165, 0, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+
+        // Рисуем маркеры начала и конца очереди
+        if (laneBoundary.carStartId) {
+            const car = currentFrame.points.find((p) => p.obj_id === laneBoundary.carStartId);
+            if (car) {
+                const x = (car.x - minX) * finalScale;
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.4)';
+                ctx.fillRect(x - 5, screenY - laneHeight / 2, 10, laneHeight);
+                // Добавляем обводку
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x - 5, screenY - laneHeight / 2, 10, laneHeight);
+            }
+        }
+        if (laneBoundary.carEndId) {
+            const car = currentFrame.points.find((p) => p.obj_id === laneBoundary.carEndId);
+            if (car) {
+                const x = (car.x - minX) * finalScale;
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.4)';
+                ctx.fillRect(x - 5, screenY - laneHeight / 2, 10, laneHeight);
+                // Добавляем обводку
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x - 5, screenY - laneHeight / 2, 10, laneHeight);
+            }
+        }
+    };
+
     // Анимация
     useEffect(() => {
         if (!isPlaying || !canvasRef.current || !timeFrames.length) return;
@@ -555,7 +611,7 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             drawPerpendicularRoad(ctx, minX, maxX, minY, maxY, finalScale);
 
             // Рисуем полосы движения
-            drawLanes(ctx, minX, maxX, minY, maxY, finalScale);
+            drawLanes(ctx, minX, minY, maxX, maxY, finalScale);
 
             // Рисуем светофор
             drawTrafficLight(ctx, minX, maxX, minY, maxY, finalScale);
@@ -572,6 +628,11 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
                 });
                 return;
             }
+
+            // Рисуем границы пробок
+            radarData.road_sensor_lanes?.forEach((lane) => {
+                drawQueueBoundaries(ctx, lane, currentFrame, minX, minY, finalScale);
+            });
 
             // Отрисовываем траектории
             currentFrame.points.forEach((point) => {
@@ -658,7 +719,6 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             const updateCanvasSize = () => {
                 const containerWidth = canvas.parentElement?.clientWidth || window.innerWidth;
                 const containerHeight = window.innerHeight - 150; // Учитываем высоту элементов управления
-                const aspectRatio = containerWidth / containerHeight;
 
                 // Устанавливаем размеры canvas
                 canvas.width = containerWidth - 32; // Учитываем padding
@@ -673,7 +733,6 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             console.log('Инициализация canvas:', {
                 width: canvas.width,
                 height: canvas.height,
-                aspectRatio: canvas.width / canvas.height,
                 context: ctx,
             });
 
@@ -699,14 +758,72 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
 
     return (
         <div className='radar-visualization'>
-            <canvas
-                ref={canvasRef}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseLeave}
-                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-            />
+            <div className='visualization-container'>
+                <canvas
+                    ref={canvasRef}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseLeave}
+                    style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                />
+                <div className='lane-metrics'>
+                    {radarData.road_sensor_lanes?.map((lane) => {
+                        const currentFrame = timeFrames[currentTimeIndex];
+                        const laneBoundary = currentFrame?.boundary?.lanes.find(
+                            (b) => b.laneId === lane.lane_index
+                        );
+
+                        return (
+                            <div key={lane.lane_index} className='lane-metric-card'>
+                                <h3>Полоса {lane.lane_index}</h3>
+                                {laneBoundary && (
+                                    <div className='metrics'>
+                                        <div className='metric'>
+                                            <span className='metric-label'>Длина очереди:</span>
+                                            <span className='metric-value'>
+                                                {laneBoundary.queueLength.toFixed(1)}м
+                                            </span>
+                                        </div>
+                                        <div className='metric'>
+                                            <span className='metric-label'>Время ожидания:</span>
+                                            <span className='metric-value'>
+                                                {laneBoundary.queueDuration.toFixed(1)}с
+                                            </span>
+                                        </div>
+                                        <div className='metric'>
+                                            <span className='metric-label'>Скорость потока:</span>
+                                            <span className='metric-value'>
+                                                {laneBoundary.flowSpeed.toFixed(1)}км/ч
+                                            </span>
+                                        </div>
+                                        <div className='metric'>
+                                            <span className='metric-label'>Задержка:</span>
+                                            <span className='metric-value'>
+                                                {laneBoundary.delay.toFixed(1)}с
+                                            </span>
+                                        </div>
+                                        <div className='metric'>
+                                            <span className='metric-label'>
+                                                Начало затора (ID):
+                                            </span>
+                                            <span className='metric-value'>
+                                                {laneBoundary.carStartId || 'Нет'}
+                                            </span>
+                                        </div>
+                                        <div className='metric'>
+                                            <span className='metric-label'>Конец затора (ID):</span>
+                                            <span className='metric-value'>
+                                                {laneBoundary.carEndId || 'Нет'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
             <div className='time-controls'>
                 <input
                     type='range'
