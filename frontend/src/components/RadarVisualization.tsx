@@ -120,26 +120,24 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
         const allPoints = frames.flatMap((frame) => frame.points);
         let minX = Infinity;
         let maxX = -Infinity;
-        let minY = Infinity;
-        let maxY = -Infinity;
+        const minY = -15; // Фиксированный диапазон по Y
+        const maxY = 15;
 
         for (const point of allPoints) {
-            if (!isNaN(point.x) && !isNaN(point.y)) {
+            if (!isNaN(point.x)) {
                 minX = Math.min(minX, point.x);
                 maxX = Math.max(maxX, point.x);
-                minY = Math.min(minY, point.y);
-                maxY = Math.max(maxY, point.y);
             }
         }
 
-        // Проверяем, что мы нашли валидные границы
-        if (isFinite(minX) && isFinite(maxX) && isFinite(minY) && isFinite(maxY)) {
+        // Проверяем, что мы нашли валидные границы по X
+        if (isFinite(minX) && isFinite(maxX)) {
             const padding = 50;
             setGridBounds({
                 minX: minX - padding,
                 maxX: maxX + padding,
-                minY: minY - padding,
-                maxY: maxY + padding,
+                minY,
+                maxY,
             });
         } else {
             // Если не нашли валидные границы, используем значения по умолчанию
@@ -147,8 +145,8 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             setGridBounds({
                 minX: -100,
                 maxX: 100,
-                minY: -100,
-                maxY: 100,
+                minY,
+                maxY,
             });
         }
 
@@ -414,19 +412,32 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
         }
 
         try {
-            // Устанавливаем размеры canvas
-            canvas.width = 800;
-            canvas.height = 600;
+            // Устанавливаем размеры canvas в зависимости от размера экрана
+            const updateCanvasSize = () => {
+                const containerWidth = canvas.parentElement?.clientWidth || window.innerWidth;
+                const aspectRatio = 16 / 9;
+                canvas.width = containerWidth - 32; // Учитываем padding
+                canvas.height = Math.round(canvas.width / aspectRatio);
+            };
+
+            // Обновляем размеры при монтировании и при изменении размера окна
+            updateCanvasSize();
+            window.addEventListener('resize', updateCanvasSize);
 
             // Логируем инициализацию canvas
             console.log('Инициализация canvas:', {
                 width: canvas.width,
                 height: canvas.height,
+                aspectRatio: 16 / 9,
                 context: ctx,
             });
 
             // Отрисовываем начальное состояние
             drawPoints(ctx, []);
+
+            return () => {
+                window.removeEventListener('resize', updateCanvasSize);
+            };
         } catch (err) {
             setError('Ошибка при инициализации canvas');
             console.error('Ошибка инициализации:', err);
@@ -443,6 +454,7 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
 
     return (
         <div className='radar-visualization'>
+            <canvas ref={canvasRef} />
             <div className='time-controls'>
                 <input
                     type='range'
@@ -463,7 +475,6 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
                         : '00:00:00'}
                 </span>
             </div>
-            <canvas ref={canvasRef} />
             <div className='controls'>
                 <button
                     onClick={() => {
