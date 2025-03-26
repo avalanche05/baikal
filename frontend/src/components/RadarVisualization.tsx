@@ -23,6 +23,13 @@ interface RadarVisualizationProps {
     radarData: Radar;
 }
 
+interface Lane {
+    lane_id: number;
+    lane_type: number;
+    lane_width: number;
+    lane_offset: number;
+}
+
 export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarData }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -198,6 +205,7 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
         finalScale: number
     ) => {
         try {
+            // Основная сетка
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 0.5;
 
@@ -231,6 +239,30 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
                 ctx.fillText(y.toFixed(0), 5, screenY + 5);
             }
 
+            // Детальная сетка
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 0.2;
+
+            // Рисуем детальные вертикальные линии
+            const detailStepX = stepX / 5;
+            for (let x = minX; x <= maxX; x += detailStepX) {
+                const screenX = (x - minX) * finalScale;
+                ctx.beginPath();
+                ctx.moveTo(screenX, 0);
+                ctx.lineTo(screenX, ctx.canvas.height);
+                ctx.stroke();
+            }
+
+            // Рисуем детальные горизонтальные линии
+            const detailStepY = stepY / 5;
+            for (let y = minY; y <= maxY; y += detailStepY) {
+                const screenY = (y - minY) * finalScale;
+                ctx.beginPath();
+                ctx.moveTo(0, screenY);
+                ctx.lineTo(ctx.canvas.width, screenY);
+                ctx.stroke();
+            }
+
             // Рисуем оси координат
             ctx.strokeStyle = '#000';
             ctx.lineWidth = 1;
@@ -250,6 +282,193 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             ctx.stroke();
         } catch (err) {
             console.error('Ошибка отрисовки сетки:', err);
+        }
+    };
+
+    // Функция для отрисовки полос движения
+    const drawLanes = (
+        ctx: CanvasRenderingContext2D,
+        minX: number,
+        maxX: number,
+        minY: number,
+        maxY: number,
+        finalScale: number
+    ) => {
+        try {
+            // Получаем информацию о полосах из данных
+            const lanes = radarData.road_sensor_lanes || [];
+
+            // Сортируем полосы по смещению
+            const sortedLanes = [...lanes].sort((a, b) => a.range_offset - b.range_offset);
+
+            // Находим максимальную ширину дороги для расчета фона
+            const maxLaneOffset = Math.max(...lanes.map((lane) => Math.abs(lane.range_offset)));
+            const maxLaneWidth = Math.max(...lanes.map((lane) => lane.width));
+            const roadHeight = (maxLaneOffset * 2 + maxLaneWidth) * finalScale;
+
+            // Вычисляем видимую область с учетом смещения
+            const visibleMinX = minX - offset.x / finalScale;
+            const visibleMaxX = maxX - offset.x / finalScale;
+
+            // Рисуем фон дороги на всю видимую ширину
+            const roadY = (0 - minY) * finalScale - (roadHeight * finalScale) / 2;
+            ctx.fillStyle = '#E5E5E5';
+            ctx.fillRect(0, roadY, ctx.canvas.width, roadHeight * finalScale);
+
+            // Рисуем каждую полосу
+            sortedLanes.forEach((lane) => {
+                const y = lane.range_offset;
+                const screenY = (y - minY) * finalScale;
+
+                // Основная линия полосы
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, screenY);
+                ctx.lineTo(ctx.canvas.width, screenY);
+                ctx.stroke();
+
+                // Добавляем подпись полосы
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText(`Полоса ${lane.lane_index}`, 10, screenY - 5);
+            });
+        } catch (err) {
+            console.error('Ошибка отрисовки полос:', err);
+        }
+    };
+
+    // Функция для отрисовки светофора
+    const drawTrafficLight = (
+        ctx: CanvasRenderingContext2D,
+        minX: number,
+        maxX: number,
+        minY: number,
+        maxY: number,
+        finalScale: number
+    ) => {
+        try {
+            const x = (28 - minX) * finalScale; // Перемещаем светофор на x=50
+            const y = (0 - minY) * finalScale; // Размещаем на уровне дороги
+
+            // Рисуем опору светофора
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 0.4; // Уменьшаем толщину линии
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y - 6 * finalScale); // Уменьшаем высоту опоры
+            ctx.stroke();
+
+            // Рисуем корпус светофора
+            ctx.fillStyle = '#333';
+            ctx.fillRect(
+                x - 1.6 * finalScale,
+                y - 12 * finalScale,
+                3.2 * finalScale,
+                8 * finalScale
+            );
+
+            // Рисуем сигналы светофора
+            const signals = ['#ff0000', '#ffff00', '#00ff00'];
+            signals.forEach((color, index) => {
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(
+                    x,
+                    y - 10 * finalScale + index * 3 * finalScale,
+                    0.8 * finalScale,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+            });
+        } catch (err) {
+            console.error('Ошибка отрисовки светофора:', err);
+        }
+    };
+
+    // Функция для отрисовки перпендикулярной дороги
+    const drawPerpendicularRoad = (
+        ctx: CanvasRenderingContext2D,
+        minX: number,
+        maxX: number,
+        minY: number,
+        maxY: number,
+        finalScale: number
+    ) => {
+        try {
+            const roadWidth = 20; // ширина дороги в метрах
+            const roadLength = 100; // длина дороги в метрах
+
+            // Рисуем фон дороги
+            ctx.fillStyle = '#E5E5E5';
+            ctx.fillRect(
+                (0 - minX) * finalScale - (roadWidth * finalScale) / 2,
+                (0 - minY) * finalScale - (roadLength * finalScale) / 2,
+                roadWidth * finalScale,
+                roadLength * finalScale
+            );
+
+            // Рисуем разметку дороги
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(
+                (0 - minX) * finalScale,
+                (0 - minY) * finalScale - (roadLength * finalScale) / 2
+            );
+            ctx.lineTo(
+                (0 - minX) * finalScale,
+                (0 - minY) * finalScale + (roadLength * finalScale) / 2
+            );
+            ctx.stroke();
+
+            // Рисуем пунктирную линию посередине
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(
+                (0 - minX) * finalScale,
+                (0 - minY) * finalScale - (roadLength * finalScale) / 2
+            );
+            ctx.lineTo(
+                (0 - minX) * finalScale,
+                (0 - minY) * finalScale + (roadLength * finalScale) / 2
+            );
+            ctx.stroke();
+            ctx.setLineDash([]); // Сбрасываем пунктир
+        } catch (err) {
+            console.error('Ошибка отрисовки перпендикулярной дороги:', err);
+        }
+    };
+
+    // Функция для отрисовки линейки с расстоянием
+    const drawRuler = (
+        ctx: CanvasRenderingContext2D,
+        minX: number,
+        maxX: number,
+        minY: number,
+        maxY: number,
+        finalScale: number
+    ) => {
+        try {
+            const startX = 28; // Начальная точка (светофор)
+            const endX = startX + 300; // Конечная точка (300 метров вправо)
+            const y = 0; // Уровень дороги
+
+            // Рисуем риски и подписи каждые 10 метров
+            for (let x = startX; x <= endX; x += 10) {
+                const screenX = (x - minX) * finalScale;
+                const screenY = (y - minY) * finalScale;
+
+                // Добавляем подпись расстояния
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText((x - startX).toString(), screenX, screenY + 15 * finalScale);
+            }
+        } catch (err) {
+            console.error('Ошибка отрисовки линейки:', err);
         }
     };
 
@@ -315,15 +534,8 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             ctx.save();
             ctx.translate(offset.x, offset.y);
 
-            // Логируем размеры canvas
-            console.log('Размеры canvas:', {
-                width: ctx.canvas.width,
-                height: ctx.canvas.height,
-            });
-
             if (!gridBounds) {
                 console.log('Нет границ сетки, используем значения по умолчанию');
-                drawGrid(ctx, -100, 100, -100, 100, 1);
                 return;
             }
 
@@ -332,7 +544,6 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             // Проверяем, что границы валидны
             if (isNaN(minX) || isNaN(maxX) || isNaN(minY) || isNaN(maxY)) {
                 console.log('Некорректные границы сетки, используем значения по умолчанию');
-                drawGrid(ctx, -100, 100, -100, 100, 1);
                 return;
             }
 
@@ -340,19 +551,17 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             const scaleY = ctx.canvas.height / (maxY - minY);
             const finalScale = Math.min(scaleX, scaleY) * scale;
 
-            // Логируем параметры масштабирования
-            console.log('Параметры масштабирования:', {
-                minX,
-                maxX,
-                minY,
-                maxY,
-                scaleX,
-                scaleY,
-                finalScale,
-            });
+            // Рисуем перпендикулярную дорогу
+            drawPerpendicularRoad(ctx, minX, maxX, minY, maxY, finalScale);
 
-            // Рисуем сетку
-            drawGrid(ctx, minX, maxX, minY, maxY, finalScale);
+            // Рисуем полосы движения
+            drawLanes(ctx, minX, maxX, minY, maxY, finalScale);
+
+            // Рисуем светофор
+            drawTrafficLight(ctx, minX, maxX, minY, maxY, finalScale);
+
+            // Рисуем линейку с расстоянием
+            drawRuler(ctx, minX, maxX, minY, maxY, finalScale);
 
             // Получаем текущий кадр
             const currentFrame = frames[currentTimeIndex];
@@ -396,22 +605,19 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
                 const x = (point.x - minX) * finalScale;
                 const y = (point.y - minY) * finalScale;
 
-                // Логируем координаты точки
-                console.log('Отрисовка точки:', {
-                    id: point.obj_id,
-                    worldX: point.x,
-                    worldY: point.y,
-                    screenX: x,
-                    screenY: y,
-                    speed: point.speed,
-                });
+                // Вычисляем размеры прямоугольника
+                const length = point.obj_length || 4.5;
+                const width = 2; // Фиксированная ширина
+                const screenLength = length * finalScale;
+                const screenWidth = width * finalScale;
 
-                // Рисуем точку
-                ctx.beginPath();
-                ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                // Рисуем прямоугольник
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate((-point.heading * Math.PI) / 180);
                 ctx.fillStyle = `hsl(${point.speed * 10}, 70%, 50%)`;
-                ctx.fill();
-                ctx.closePath();
+                ctx.fillRect(-screenLength / 2, -screenWidth / 2, screenLength, screenWidth);
+                ctx.restore();
 
                 // Добавляем текст с obj_id
                 ctx.fillStyle = '#fff';
@@ -451,9 +657,12 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             // Устанавливаем размеры canvas в зависимости от размера экрана
             const updateCanvasSize = () => {
                 const containerWidth = canvas.parentElement?.clientWidth || window.innerWidth;
-                const aspectRatio = 16 / 9;
+                const containerHeight = window.innerHeight - 150; // Учитываем высоту элементов управления
+                const aspectRatio = containerWidth / containerHeight;
+
+                // Устанавливаем размеры canvas
                 canvas.width = containerWidth - 32; // Учитываем padding
-                canvas.height = Math.round(canvas.width / aspectRatio);
+                canvas.height = containerHeight - 32;
             };
 
             // Обновляем размеры при монтировании и при изменении размера окна
@@ -464,7 +673,7 @@ export const RadarVisualization: React.FC<RadarVisualizationProps> = ({ radarDat
             console.log('Инициализация canvas:', {
                 width: canvas.width,
                 height: canvas.height,
-                aspectRatio: 16 / 9,
+                aspectRatio: canvas.width / canvas.height,
                 context: ctx,
             });
 
