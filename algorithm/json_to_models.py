@@ -56,37 +56,3 @@ def process_json_file(file_path: str) -> List[SensorConfig]:
     except Exception as e:
         print(f"Ошибка при обработке файла {file_path}: {str(e)}")
         return []
-
-
-def main():
-    # Получаем список всех JSON файлов
-    json_files = ['/Users/plastinina-ls/studies/Hacks/baikal/data/Олимпийский20_03_2025_17_31.json']
-    # json_files = glob.glob(os.path.join(json_dir, "*.json"))
-    
-    # if not json_files:
-    #     print("JSON файлы не найдены в текущей директории")
-    #     return
-    
-    all_models = []
-    
-    # Обрабатываем каждый файл
-    for json_file in json_files:
-        print(f"\nОбработка файла: {json_file}")
-        models = process_json_file(json_file) # на наших данных здесь всегда длина 1. Он нам как раз и нужен
-        all_models.append(models)
-    
-    # Объединяем все модели
-    merged_model = all_models[0][0]
-    # Выводим информацию о объединенной модели
-    print("\nОбъединенная модель:")
-    print(f"Тип сенсора: {merged_model.sensor_type.type}")
-    print(f"IP адрес: {merged_model.sensor_ip}")
-    print(f"Количество полос: {len(merged_model.road_sensor_lanes)}")
-    print(f"Общее количество объектов: {len(merged_model.objects)}")
-    print("-" * 50)
-
-    return merged_model
-
-
-if __name__ == "__main__":
-    main() 
