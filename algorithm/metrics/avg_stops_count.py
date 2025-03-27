@@ -2,12 +2,12 @@ import datetime
 from collections import deque
 from pprint import pprint
 
-from algorithm.json_to_models import main
+from backend.data_loader import get_all_objects
 
-models = main()
+objects = get_all_objects()
 
 STOP_TIME_THRESHOLD_SECS = 5
-AVG_STOPS_VALUE_THRESHOLD_MIN = 5
+AVG_STOPS_VALUE_THRESHOLD_MIN = 3
 
 traffic_jams = []  # starts of
 traffic_jams_end = []  # ends of
@@ -25,29 +25,36 @@ def has_left(curr_dt: datetime.datetime, last_seen_dt: datetime.datetime) -> boo
     return seconds >= 10.0
 
 
-def check_heading(angle: int):
+def check_heading(angle: int) -> bool:
     return 160 <= angle <= 200
+
+def check_x(x: int) -> bool:
+    return x > 30
 
 
 def is_traffic_lane(lane: int) -> bool:
     return 0 <= lane <= 2
 
 
-def calc_avg_stops_count(curr_dt: datetime.datetime, avg_sum: float, stops: deque) -> float:
-    if not stops:
+def calc_avg_stops_count(curr_dt: datetime.datetime, avg_sum: float, stops: deque, car_ids: list[int]) -> float:
+    if not stops or not car_ids:
         return 0.0
 
     while len(stops) and stops[0][0] < curr_dt - datetime.timedelta(minutes=AVG_STOPS_VALUE_THRESHOLD_MIN):
         avg_sum -= 1
         stops.popleft()
+    
+    real_stops = []
+    for stop in stops:
+        if stop[1] in car_ids:
+            real_stops.append(stop[1])
 
-    print('car_len: ', len(set([stop[1] for stop in stops])))
-    return avg_sum / len(set([stop[1] for stop in stops]))
+    return len(real_stops) / len(car_ids)
 
 
 def get_all_car_stops_by_id(car_id: int) -> None:
     stops = []
-    for object_frame in models.objects:
+    for object_frame in objects:
         curr_dt = object_frame.rows_data[0].time
         for car in object_frame.rows_data:
             if car.obj_id == car_id and car.obj_speed == 0:
@@ -61,12 +68,21 @@ def avg_multiple_stops():
     general_stops_sum, general_cars_sum = 0, 0
     d = set()
     stops = deque()
-
-    for object_frame in models.objects:
+    result = []
+    for object_frame in objects:
         lanes = [[] for _ in range(8)]
         curr_dt = object_frame.rows_data[0].time
         for car in object_frame.rows_data:
-            if not is_traffic_lane(car.lane) and check_heading(car.heading):
+            if not is_traffic_lane(car.lane) or not check_heading(car.heading) or not check_x(car.point_x):
+                new_stops = []
+                for stop in stops:
+                    if stop[1] != car.obj_id:
+                        new_stops.append(stop)
+                    else:
+                        general_stops_sum -= 1
+                stops = deque(new_stops)
+                if car.obj_id in cars:
+                    del cars[car.obj_id]
                 continue
 
             # старый id привязан к новой машине, не успели почистить
@@ -104,7 +120,7 @@ def avg_multiple_stops():
                 d.add(car.obj_id)
 
             # начала двигаться после остановки
-            if car.obj_speed > 0 and cars[car.obj_id]["counted"]:
+            if car.obj_speed > 1.0 and cars[car.obj_id]["counted"]:
                 cars[car.obj_id]["counted"] = False
                 cars[car.obj_id]["last_stop_dt"] = None
                 cars[car.obj_id]["last_point_x_stop"] = None
@@ -123,8 +139,11 @@ def avg_multiple_stops():
                 traffic_jams_car_ids.remove(car_id)
             del cars[car_id]
 
-        avg_stops_sum = calc_avg_stops_count(curr_dt, general_stops_sum, stops)
-        print(f"avg_stops_sum: {avg_stops_sum}")
+        avg_stops_sum = calc_avg_stops_count(curr_dt, general_stops_sum, stops, cars.keys())
+        if avg_stops_sum > 50:
+            print([t for t in cars.keys()])
+        result.append((object_frame.rows_data[0].time, avg_stops_sum))
+    return result
 
 
 if __name__ == "__main__":

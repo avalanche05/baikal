@@ -108,6 +108,8 @@ def drow_front_back():
         end_points = []
         
         for start, end, ts in data[lane_id]:
+            if start and end:
+                print(start.point_x, end.point_x, ts)
             timestamps.append(ts)
             start_points.append(start.point_x if start else 0)
             end_points.append(end.point_x if end else 0)

@@ -26,6 +26,10 @@ def get_queue_end(rows: list[RowData]) -> RowData | None:
         return rows[-1]
     return None
 
+
+def is_car_going(row_data: RowData)
+
+cars = dict()
 def calculate_queue_meters(objects: list[Objects]):
     result = {lane: {'starts': [], 'ends': [], 'ts': []} for lane in LANES}
     for obj in objects:

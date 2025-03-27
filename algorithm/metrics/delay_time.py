@@ -1,15 +1,17 @@
 import datetime
 from collections import deque
 
-from algorithm.json_to_models import main
+from algorithm.models import Objects
+from backend.data_loader import get_all_objects
+AVG_VALUE_THRESHOLD_MIN = 10
+from backend.data_loader import get_all_objects
 
-AVG_VALUE_THRESHOLD_MIN = 3
-models = main()
+objects = get_all_objects()
 cars = dict()
 ids = set()
 
 
-standard_time_seconds = 12  # 200 m / 60 km p h
+standard_time_seconds = 50  # 200 m / 60 km p h
 
 
 def has_left(curr_dt: datetime.datetime, last_seen_dt: datetime.datetime) -> bool:
@@ -76,11 +78,11 @@ def calc_avg_delay_time(curr_dt: datetime.datetime, avg_sum: float, car_leaves: 
     return avg_sum / len(car_leaves)
 
 
-def calc_time_diff(models) -> None:
+def calc_time_diff(objects: list[Objects]) -> None:
     avg_sum = 0
     car_leaves = deque()
 
-    for object_frame in models.objects:
+    for object_frame in objects:
         curr_dt = object_frame.rows_data[0].time
         for car in object_frame.rows_data:
             if not is_traffic_lane(car.lane) and check_heading(car.heading):
@@ -113,12 +115,11 @@ def calc_time_diff(models) -> None:
                 if has_left(curr_dt, last_seen_dt):
                     if from_beginning and is_traffic_lane(car[0][2]):
                         time_diff = calculate_time(last_seen_dt, first_seen_dt)
-                        if time_diff > standard_time_seconds:
-                            delay = time_diff - standard_time_seconds
-                            sum_delay += delay
-                            avg_sum += delay
-                            sum_cars += 1
-                            car_leaves.append((curr_dt, delay))
+                        delay = time_diff - standard_time_seconds
+                        sum_delay += delay
+                        avg_sum += delay
+                        sum_cars += 1
+                        car_leaves.append((curr_dt, delay))
 
                     ids_to_delete.append(car_id)
 
@@ -126,14 +127,14 @@ def calc_time_diff(models) -> None:
             del cars[car_id]
 
         if sum_cars:
-            avg_delay_time_mins = calc_avg_delay_time(curr_dt, avg_sum, car_leaves)
+            avg_delay_time_mins = max(0, calc_avg_delay_time(curr_dt, avg_sum, car_leaves))
             avg_delay_time = sum_delay / (sum_cars if sum_cars else 1)
             print(f"avg_delay_time: {avg_delay_time}, avg_delay_time_mins: {avg_delay_time_mins} for "
                   f"{AVG_VALUE_THRESHOLD_MIN}min")
 
 
 # print(cars)
-calc_time_diff(models)
+calc_time_diff(objects)
 # print(ids)
 # print(car_time(car_id=67))
 # print(get_max_point_x())
