@@ -89,4 +89,54 @@ def get_jam():
         boundaries[-1].lanes = lanes
     with open('boundaries.json', 'w') as f:
         json.dump([t.model_dump() for t in boundaries], f, cls=DateTimeEncoder)
-get_jam()
+
+
+def drow_front_back():
+    start_time = datetime(2025, 3, 20, 14, 20, 0)
+    end_time = datetime(2025, 3, 20, 14, 25, 0)
+    
+    data = get_queue_boundaries(start_time, end_time)
+    
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    
+    # Создаем график для каждого lane
+    for lane_id in range(len(data)):
+        # Подготовка данных
+        timestamps = []
+        start_points = []
+        end_points = []
+        
+        for start, end, ts in data[lane_id]:
+            timestamps.append(ts)
+            start_points.append(start.point_x if start else 0)
+            end_points.append(end.point_x if end else 0)
+        
+        # Создание графика
+        plt.figure(figsize=(12, 6))
+        
+        # Добавление линий без маркеров
+        plt.plot(timestamps, start_points, 'b-', label=f'Lane {lane_id} Start', linewidth=2)
+        plt.plot(timestamps, end_points, 'r-', label=f'Lane {lane_id} End', linewidth=2)
+        
+        # Настройка графика
+        plt.title(f'Lane {lane_id} Data (14:20-14:25)', fontsize=14)
+        plt.xlabel('Time', fontsize=12)
+        plt.ylabel('Point X', fontsize=12)
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend(fontsize=10)
+        
+        # Установка границ по оси X
+        plt.xlim(start_time, end_time)
+        
+        # Форматирование оси времени
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+        plt.gcf().autofmt_xdate()  # Автоматический поворот меток времени
+        
+        # Сохранение графика
+        plt.savefig(f'static/lane_{lane_id}_plot.png', dpi=300, bbox_inches='tight')
+        plt.close()  # Закрываем график для освобождения памяти
+        
+        # Логируем создание графика
+        logger.info(f"Created plot for lane {lane_id}")
+drow_front_back()
