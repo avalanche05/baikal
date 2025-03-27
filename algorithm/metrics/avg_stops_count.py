@@ -127,33 +127,5 @@ def avg_multiple_stops():
         print(f"avg_stops_sum: {avg_stops_sum}")
 
 
-def calc_queue_time_for_lanes():
-    for object_frame in models.objects:
-        lanes = [[] for _ in range(8)]
-        curr_dt = object_frame.rows_data[0].time
-        for car in object_frame.rows_data:
-            if not is_traffic_lane(car.lane) and check_heading(car.heading):
-                continue
-
-            if car.obj_id not in cars_speed:
-                cars_speed[car.obj_id] = []
-
-            cars_speed[car.obj_id].append((car.obj_speed, car.lane, car.point_x))
-
-            if car.obj_speed == 0:
-                traffic_jams.append(curr_dt)
-
-            lanes[car.lane].append((car.point_x, car.obj_speed, car.obj_id))
-
-        for i in range(4):
-            print(i)
-            lanes[i].sort(key=lambda x: x[0])
-            pprint(lanes[i])
-        # print(traffic_jams)
-
-    # pprint(cars_speed)
-
-
-avg_multiple_stops()
-# calc_queue_time()
-# get_all_car_stops_by_id(136)
+if __name__ == "__main__":
+    avg_multiple_stops()
