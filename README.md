@@ -56,6 +56,6 @@
 
 [Ваня, Algorithms/Backend](https://t.me/avalanche05) 
 
-[Женя, Frontend/Research](https://t.me/shmate)
+[Женя, Frontend](https://t.me/shmate)
 
 [Тимур, DS/Analytics](https://t.me/goddesu)
